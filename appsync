@@ -1,0 +1,228 @@
+#!/usr/bin/php
+<?php
+
+/* 
+ * Copyright (C) 2018 Lakestone Labs <androidsync at lakestonelabs dot com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+require_once __DIR__ . "/includes/Misc.php";
+require_once __DIR__ . "/config.php";
+require_once __DIR__."/includes/Adb.php";
+require_once __DIR__."/includes/AndroidDeviceUsb.php";
+require_once __DIR__."/includes/AndroidDeviceNetwork.php";
+require_once __DIR__."/includes/PackageInstallManifest.php";
+
+$devices_array = array();
+$device_source = null;
+$device_dest = null;
+$mode = "usb";
+$adb_obj = null;
+
+if(in_array("-n", $argv))
+{
+    $mode = "network";
+
+    $adb_obj = new Adb($adb_path, $mode);
+
+    echo "\nNetwork mode enabled.  ADB USB functionality currently disabled.\n";
+    echo "Enter the IP addresses (comma separated) of the devices you would like to use: ";
+    $device_ips = trim(fgets(STDIN));
+    if(strlen($device_ips) > 0)
+    {
+        $device_ips_array = preg_split("/,\s{0,}/", $device_ips);
+        if(count($device_ips_array) > 0)
+        {
+            foreach($device_ips_array as $this_ip)
+            {
+                try
+                {
+                    $device_obj = new AndroidDeviceNetwork($adb_obj, $this_ip);
+                }
+                catch(Exception $e)
+                {
+                    echo $e->getMessage()."\n";
+                    exit(1);
+                }
+                
+                $devices_array[] = $device_obj;
+            }
+        }
+    }
+}
+else
+{
+    $devices = $adb_obj->scanForDevices();
+    foreach($devices as $this_device_id)
+    {
+        try
+        {
+            $device_obj = new AndroidDeviceUsb($adb_obj, $this_device_id);
+        } 
+        catch (Exception $e)
+        {
+            echo $e->getMessage()."\n";
+            exit(1);
+        }
+        $devices_array[] = $device_obj;
+    }
+}
+
+
+if(count($devices_array) === 1)
+{
+    echo "\nCan't sync devices with only one device present.\n\n";
+    exit(1);
+}
+else if(count($devices_array) === 0)
+{
+    echo "\nNo devices found.  Can't proceed.\n\n";
+    exit(1);
+}
+
+echo "\nDevices Found:\n";
+print_devices();
+
+echo "Select source device:";
+$device_source = trim(fgets(STDIN));
+$device_source = $devices_array[$device_source];
+
+echo "Select destination device:";
+$device_dest = trim(fgets(STDIN));
+$device_dest = $devices_array[$device_dest];
+
+
+$pack_man_obj = new PackageInstallManifest($device_source, $device_dest);
+
+echo "\n\n";
+/*
+ * Get our upgradable apps.
+ */
+$upgradable_array = $adb_obj::getUpgradableAppsList($device_source, $device_dest);
+if(count($upgradable_array) > 0)
+{
+    echo "Upgradable Apps:\n";
+    $up_map_name_to_index = [];
+
+    $index = 0;
+    foreach($upgradable_array as $this_upgradable_app_name => $version_array)
+    {
+        echo $index.".) ".$this_upgradable_app_name." [".$version_array["old_version"]." -> ".$version_array["new_version"]."]\n";
+        $up_map_name_to_index[$index] = $this_upgradable_app_name;
+        $index++;
+    }
+    echo "Select the apps you wish to upgrade (comma-separated or 'all' to upgrade everything, blank for nothing):";
+    $upgrade_these_apps_string = trim(fgets(STDIN));
+    if(strlen($upgrade_these_apps_string) > 0)
+    {
+        if($upgrade_these_apps_string == "all")
+        {
+            $upgrade_apps_index_array = range(0, (count($upgradable_array)-1));
+        }
+        else
+        {
+            $upgrade_apps_index_array = preg_split("/,\s{0,}/", $upgrade_these_apps_string);
+        }
+
+        foreach($upgrade_apps_index_array as $this_upgrade_index)
+        {
+            $pack_man_obj->appendAppToUpgrade($up_map_name_to_index[$this_upgrade_index], $upgradable_array[$up_map_name_to_index[$this_upgrade_index]]["old_version"],
+                                              $upgradable_array[$up_map_name_to_index[$this_upgrade_index]]["new_version"]);
+        }
+    }
+}
+else
+{
+    echo "No apps to upgrade.\n";
+}
+
+echo "\n\n";
+
+/*
+ * Get our new installable apps.
+ */
+$installable_apps = $adb_obj::getNewAppsList($device_source, $device_dest);
+if(count($installable_apps) > 0)
+{
+    echo "Avalable Apps to Install:\n";
+    $index = 0;
+    foreach($installable_apps as $this_new_app)
+    {
+        echo $index.".)".$this_new_app."\n";
+        $index++;
+    }
+    echo "Select the new apps you wish to install (comma-separated or 'all' to upgrade everything, blank for nothing):";
+    $install_these_apps_string = trim(fgets(STDIN));
+    if(strlen($install_these_apps_string) > 0)
+    {
+        if($install_these_apps_string == "all")
+        {
+            $install_these_apps_index_array = range(0, (count($installable_apps)-1));
+        }
+        else
+        {
+            $install_these_apps_index_array = preg_split("/,\s{0,}/", $install_these_apps_string);
+        }
+
+        foreach($install_these_apps_index_array as $install_this_app_index)
+        {
+            $pack_man_obj->appendAppToInstall($installable_apps[$install_this_app_index]);
+        }
+    }
+}
+else
+{
+    echo "No new apps to install.\n";
+}
+echo "\n";
+$adb_obj->installPackages($pack_man_obj);
+echo "\n";
+
+exit(0);
+
+
+// Disconnect for each device.
+foreach($devices_array as $this_device_id => $this_device_array)
+{
+    Misc::runLocalCommand("adb disconnect ".$this_device_id);
+}
+
+exit(0);
+
+
+
+function print_devices()
+{
+    global $devices_array;
+    
+    $i = 0;
+    foreach($devices_array as $this_device_obj)
+    {
+        echo $i."). ".$this_device_obj->getModelNumber()."\n";
+        $i++;
+    }
+    return true;
+}
+
+function print_usage()
+{
+    echo "\n"
+            . "androidsync [options]\n\n"
+            . "OPTIONS:\n"
+            . "\t-n\tNetwork mode. (Default port of 5555 assumed unless -p switch is specified).\n"
+            . "\t-p\tPort number to use when connecting to devices via network mode.  Must use -n with this switch.\n"
+            . "\n";
+    exit(1);
+}

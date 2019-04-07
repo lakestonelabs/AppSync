@@ -168,28 +168,54 @@ class Adb
             {
                 echo ucfirst($manifest_type)." package ".$this_app_name."...";
                 
-                $package_path = Misc::runLocalCommand($this->path. " -s ".$source_device_obj->getDeviceId()." shell pm path $this_app_name | tr -d '\r' | cut -d \":\" -f 2");
-                $basename = basename($package_path);
-
-                $return = Misc::runLocalCommand($this->path." -s ".$source_device_obj->getDeviceId()." pull ".$package_path." ".$this->export_dir."/", true);
-                if($return["return_value"] === 0)
+                $packages_paths = Misc::runLocalCommand($this->path. " -s ".$source_device_obj->getDeviceId()." shell pm path $this_app_name | tr -d '\r' | cut -d \":\" -f 2");
+                /*
+                 * For apps that have multiple packages, we need to pull all of them
+                 * first before we attempt to install because we need to use the
+                 * 'install-multiple' command instead of just 'install'.  You 
+                 * can't install packages separately for an app, they must be 
+                 * installed in one atomic operation.
+                 */
+                $packages_array = [];
+                $install_cmd = null;
+                $pkg_install_str = null;
+                
+                if(is_array($packages_paths))
                 {
-                    $install_return = Misc::runLocalCommand($this->path." -s ".$dest_device_obj->getDeviceId()." install ".$install_options." ".$this->export_dir."/".$basename, true);
-                    if($install_return["return_value"] === 0)
-                    {
-                        echo "Done.\n";
-                    }
-                    else
-                    {
-                        echo "Failed.  Reason: ".$install_return["output"]."\n";
-                    }
+                    $packages_array = $packages_paths;
+                    $install_cmd = "install-multiple";
                 }
                 else
                 {
-                    echo "Could not pull package:".$this_app_name."\n";
+                    $packages_array[] = $packages_paths;
+                    $install_cmd = "install";
+                    
                 }
-                unlink($this->export_dir."/".$basename);
                 
+                foreach($packages_array as $package_path)
+                {
+                    $return = Misc::runLocalCommand($this->path." -s ".$source_device_obj->getDeviceId()." pull ".$package_path." ".$this->export_dir."/", true);
+                    if($return["return_value"] == 0)
+                    {
+                        $pkg_install_str .= $this->export_dir."/".basename($package_path)." ";
+                    }
+                    else
+                    {
+                        echo "Could not pull package:".$package_path." for app:".$this_app_name.".  Error was:". implode("\n", $return["output"]).".  Skipping app install.\n";
+                        unlink($this->export_dir."/".basename($package_path));
+                        // Try the next app as this one completely failed.
+                        continue 2; 
+                    }
+                }
+                $install_return = Misc::runLocalCommand($this->path." -s ".$dest_device_obj->getDeviceId()." ".$install_cmd." ".$install_options." ".$pkg_install_str, true);
+                if($install_return["return_value"] === 0)
+                {
+                    echo "Done.\n";
+                }
+                else
+                {
+                    echo "Failed.  Reason: ".$install_return["output"]."\n";
+                }                
             }
         }
     }

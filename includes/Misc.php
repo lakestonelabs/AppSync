@@ -77,7 +77,7 @@ Class Misc
                 // Got an error from command.
                 if($debug)
                 {
-                    return array("output" => $output, "return_value" => $return_value);
+                    return array("output" => implode("\n", $output), "return_value" => $return_value);
                 }
                 else
                 {

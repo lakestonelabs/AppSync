@@ -101,12 +101,12 @@ class Adb
             }
             else
             {
-                return false;
+                throw new Exception("Successful scan of devices but no devices returned.");
             }
         }
         else
         {
-            return false;
+            throw new Exception("Failed to scan for devices: ". $devices_return["output"]);
         }
     }
     
@@ -201,7 +201,7 @@ class Adb
                     }
                     else
                     {
-                        echo "Could not pull package:".$package_path." for app:".$this_app_name.".  Error was:". implode("\n", $return["output"]).".  Skipping app install.\n";
+                        echo "Could not pull package:".$package_path." for app:".$this_app_name.".  Error was:". $return["output"] .".  Skipping app install.\n";
                         unlink($this->export_dir."/".basename($package_path));
                         // Try the next app as this one completely failed.
                         continue 2; 

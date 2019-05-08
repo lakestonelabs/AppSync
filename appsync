@@ -64,6 +64,7 @@ if(in_array("-n", $argv))
 }
 else
 {
+    $adb_obj = new Adb($adb_path, $mode);
     $devices = $adb_obj->scanForDevices();
     foreach($devices as $this_device_id)
     {

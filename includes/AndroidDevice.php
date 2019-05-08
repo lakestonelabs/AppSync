@@ -122,7 +122,7 @@ class AndroidDevice
         }
         else
         {
-            $ex_msg = implode("\n", $return_command["output"]);
+            $ex_msg = $return_command["output"];
             throw new Exception($ex_msg);
         }
     }

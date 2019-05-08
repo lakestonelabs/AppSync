@@ -24,12 +24,13 @@
  */
 
 require_once __DIR__."/AndroidDevice.php";
+require_once __DIR__."/Adb.php";
 
 class AndroidDeviceUsb extends AndroidDevice
 {
-   public function __construct(\Adb $adb_obj, $device_id)
-   {
-        $connected_devices_array = $this->adb_obj->scanForDevices();
+    public function __construct(\Adb $adb_obj, $device_id)
+    {
+        $connected_devices_array = $adb_obj->scanForDevices();
         if(in_array($device_id, $connected_devices_array))
         {
             try
@@ -45,5 +46,5 @@ class AndroidDeviceUsb extends AndroidDevice
         {
             throw new Exception("Device with ID: ".$device_id." is not connected.");
         }
-   }
+    }
 }
